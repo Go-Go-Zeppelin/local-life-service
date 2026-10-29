@@ -24,6 +24,8 @@ spring:
     consumer:
       group-id: your-group-id
       enable-auto-commit: false
+      # 单次 poll 的消息量受控，避免下游变慢时一次拉取过多消息。
+      max-poll-records: 20
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
@@ -36,6 +38,9 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       acks: all
       retries: 3
+      batch-size: 16384
+      linger-ms: 5
+      compression-type: lz4
       properties:
         enable.idempotence: true
         # Kafka 暂不可用时快速保留排队状态，由待投递任务重试。
@@ -54,7 +59,16 @@ logging:
     dateformat: mm:ss.SSS
 
 # 【秒杀优惠券信息多级缓存改造】本地缓存的配置项(刷新时间、过期时间)、Redis缓存的过期时间
+# Kafka 拓扑与消费并发配置：本地单 Broker 默认副本和最小 ISR 为 1；生产环境至少使用 3 个 Broker，
+# 并设置 KAFKA_SECKILL_ORDER_REPLICAS=3、KAFKA_SECKILL_ORDER_MIN_INSYNC_REPLICAS=2。
 hmdp:
+  kafka:
+    seckill-order:
+      partitions: ${KAFKA_SECKILL_ORDER_PARTITIONS:3}
+      replicas: ${KAFKA_SECKILL_ORDER_REPLICAS:1}
+      min-insync-replicas: ${KAFKA_SECKILL_ORDER_MIN_INSYNC_REPLICAS:1}
+    consumer:
+      concurrency: ${KAFKA_SECKILL_ORDER_CONCURRENCY:3}
   order:
     unpaid-timeout-minutes: 15
     close-interval-ms: 60000
