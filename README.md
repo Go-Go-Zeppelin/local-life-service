@@ -96,6 +96,10 @@ mvn -Dtest=BlogStateMachineTest,BlogControllerTest,VoucherOrderControllerTest,Ca
 
 笔记集成测试也默认关闭，需要独立 MySQL 与 Redis，验证审核竞争、事务回滚、Outbox 重试和 Feed 分页，见 [笔记验证说明](manual/笔记审核发布.md#验证)。
 
+## AI 代码审查
+
+PR-Agent 使用 DeepSeek 对同仓库的非草稿 PR 自动执行中文代码审查。启用前在 GitHub Actions Secrets 中配置 `DEEPSEEK_API_KEY`。工作流配置、手动 `/review` 命令及权限说明见 [AI 代码审查](manual/AI代码审查.md)。
+
 ## 目录
 
 ```text
