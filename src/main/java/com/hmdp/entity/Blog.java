@@ -80,6 +80,17 @@ public class Blog implements Serializable {
      */
     private Integer comments;
 
+    /** 0 草稿，1 审核中，2 已发布，3 已驳回。 */
+    private Integer status;
+
+    /** 内容或状态每次变化均递增，审核请求必须携带读取时的版本。 */
+    private Long version;
+    private Integer reviewRound;
+    private Long reviewerId;
+    private LocalDateTime reviewTime;
+    private String rejectReason;
+    private LocalDateTime publishTime;
+
     /**
      * 创建时间
      */

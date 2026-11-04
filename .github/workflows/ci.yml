@@ -19,4 +19,4 @@ jobs:
           java-version: '17'
           cache: maven
       - name: Test and package
-        run: mvn -B -Dtest=VoucherOrderControllerTest,CacheInvalidationTest,NormalTest clean package
+        run: mvn -B -Dtest=BlogStateMachineTest,BlogControllerTest,VoucherOrderControllerTest,CacheInvalidationTest,NormalTest clean package
