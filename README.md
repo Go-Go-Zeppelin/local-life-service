@@ -9,11 +9,13 @@
 
 - 用户：手机验证码登录、Redis Token、签到与连续签到统计。
 - 店铺：分类查询、附近店铺检索、缓存查询。
-- 社交：博客发布与点赞、关注、关注流。
+- 社交：笔记草稿、审核发布、点赞、关注、关注流，以及 Outbox 异步 Feed 推送。
 - 优惠券：普通券与秒杀券、Caffeine/Redis 缓存。
 - 秒杀订单：Redis Lua 预占、Kafka 异步建单、结果查询、死信补偿、未支付订单超时关闭与库存回补。
 
 秒杀提交成功返回 **HTTP 202**，只表示受理。客户端必须查询最终建单结果；详细接口与状态约定见 [异步秒杀下单](manual/异步秒杀下单.md)。支付接口仅演示订单状态更新，未接入第三方支付。
+
+笔记 `POST /blog` 保存草稿，返回草稿对象。提交审核、审核权限、Feed 游标及数据库升级见 [笔记审核发布](manual/笔记审核发布.md)。历史笔记迁移后保持已发布，新笔记经过审核后公开展示。
 
 ## 技术栈
 
@@ -48,7 +50,7 @@ mysql -h 127.0.0.1 -u root -p -e "CREATE DATABASE IF NOT EXISTS hmdp CHARACTER S
 mysql -h 127.0.0.1 -u root -p hmdp < src/main/resources/db/hmdp.sql
 ```
 
-新建库只需导入上述脚本。已有库升级说明见 [异步秒杀下单](manual/异步秒杀下单.md#数据库升级)，迁移不会自动执行。
+新建库只需导入上述脚本。已有库升级说明见 [异步秒杀下单](manual/异步秒杀下单.md#数据库升级) 和 [笔记审核发布](manual/笔记审核发布.md#数据库升级)，迁移不会自动执行。
 
 SQL 中用户手机号已替换为无效的合成标识，不能直接用于登录。使用自己的测试号码请求验证码后登录，可自动创建用户。样例中的图片路径和外部图片链接不代表仓库提供相应资源或授权。
 
@@ -87,10 +89,12 @@ curl 'http://localhost:8081/shop-type/list'
 mvn clean package -DskipTests
 
 # 无需外部服务的单元测试，CI 使用相同测试范围
-mvn -Dtest=VoucherOrderControllerTest,CacheInvalidationTest,NormalTest test
+mvn -Dtest=BlogStateMachineTest,BlogControllerTest,VoucherOrderControllerTest,CacheInvalidationTest,NormalTest test
 ```
 
 `mvn test` 会包含依赖外部服务的原有测试，部分测试会写 Redis 或导入 GEO 数据，应使用专用开发环境。秒杀集成测试默认关闭，需要专用 MySQL、Redis 和 Kafka；启用命令和隔离要求见 [集成测试说明](manual/异步秒杀下单.md#验证)。
+
+笔记集成测试也默认关闭，需要独立 MySQL 与 Redis，验证审核竞争、事务回滚、Outbox 重试和 Feed 分页，见 [笔记验证说明](manual/笔记审核发布.md#验证)。
 
 ## 目录
 

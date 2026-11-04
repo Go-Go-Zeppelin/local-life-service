@@ -51,6 +51,9 @@ public class User implements Serializable {
      */
     private String icon = "";
 
+    /** 0 普通用户，1 笔记审核员。角色由数据库管理员维护。 */
+    private Integer role;
+
     /**
      * 创建时间
      */

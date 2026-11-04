@@ -1,8 +1,8 @@
 package com.hmdp.service;
 
 import com.hmdp.dto.Result;
-import com.hmdp.entity.Blog;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.hmdp.dto.blog.BlogOwnerDTO;
+import com.hmdp.dto.blog.BlogReviewDTO;
 
 /**
  * <p>
@@ -11,7 +11,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
  *
  * @since 2021-12-22
  */
-public interface IBlogService extends IService<Blog> {
+public interface IBlogService {
 
     Result queryHotBlog(Integer current);
 
@@ -21,7 +21,15 @@ public interface IBlogService extends IService<Blog> {
 
     Result queryBlogLikes(Long id);
 
-    Result saveBlog(Blog blog);
+    Result queryMyBlogs(Long userId, Integer current);
+
+    Result queryBlogsByUser(Long userId, Integer current);
+
+    BlogOwnerDTO queryOwnedBlog(Long id, Long userId);
+
+    Result queryPendingReviews(Integer current);
+
+    BlogReviewDTO queryReviewDetail(Long id);
 
     Result queryBlogOfFollow(Long max, Integer offset);
 
