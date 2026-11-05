@@ -23,6 +23,7 @@
 | --- | --- |
 | Spring Boot | 2.3.12.RELEASE |
 | MyBatis-Plus | 3.4.3 |
+| Spring StateMachine | 2.3.1 |
 | Spring Data Redis / Lettuce | 2.6.2 / 6.1.6.RELEASE |
 | Redisson | 3.13.6 |
 | Spring Kafka / Kafka Client | 2.9.13 / 3.2.3 |
@@ -106,6 +107,9 @@ PR-Agent 使用 DeepSeek 对同仓库的非草稿 PR 自动执行中文代码审
 src/main/java/com/hmdp/
 ├── controller/   HTTP API
 ├── service/      业务逻辑与缓存
+├── enums/        笔记状态与操作事件
+├── action/       状态转换的数据库动作
+├── handler/      状态机调用与单次事件上下文
 ├── consumer/     Kafka 消费与补偿
 ├── task/         定时重投与订单关闭
 ├── mapper/       MyBatis-Plus 数据访问

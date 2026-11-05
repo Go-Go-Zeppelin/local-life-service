@@ -12,6 +12,7 @@ import com.hmdp.dto.blog.BlogPublicDTO;
 import com.hmdp.dto.blog.BlogReviewDTO;
 import com.hmdp.entity.Blog;
 import com.hmdp.entity.User;
+import com.hmdp.enums.BlogState;
 import com.hmdp.mapper.BlogMapper;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IBlogService;
@@ -80,7 +81,7 @@ public class BlogQueryService implements IBlogService {
     @Override
     public Result queryPendingReviews(Integer current) {
         Page<Blog> page = blogMapper.selectPage(page(current), new QueryWrapper<Blog>()
-                .eq("status", BlogStatus.PENDING_REVIEW.getCode()).orderByAsc("id"));
+                .eq("status", BlogState.PENDING_REVIEW.getCode()).orderByAsc("id"));
         return Result.ok(page.getRecords().stream().map(blog -> BeanUtil.copyProperties(blog, BlogReviewDTO.class))
                 .collect(Collectors.toList()), page.getTotal());
     }
@@ -101,7 +102,7 @@ public class BlogQueryService implements IBlogService {
         String key = BLOG_LIKED_KEY + id;
         Double score = redis.opsForZSet().score(key, userId.toString());
         UpdateWrapper<Blog> update = new UpdateWrapper<Blog>().eq("id", id)
-                .eq("status", BlogStatus.PUBLISHED.getCode());
+                .eq("status", BlogState.PUBLISHED.getCode());
         if (score == null) {
             if (blogMapper.update(null, update.setSql("liked = liked + 1")) == 1) {
                 redis.opsForZSet().add(key, userId.toString(), System.currentTimeMillis());
@@ -177,12 +178,12 @@ public class BlogQueryService implements IBlogService {
     }
 
     private QueryWrapper<Blog> published() {
-        return new QueryWrapper<Blog>().eq("status", BlogStatus.PUBLISHED.getCode());
+        return new QueryWrapper<Blog>().eq("status", BlogState.PUBLISHED.getCode());
     }
 
     private Blog requirePublished(Long id) {
         Blog blog = blogMapper.selectById(id);
-        if (blog == null || !Integer.valueOf(BlogStatus.PUBLISHED.getCode()).equals(blog.getStatus())) {
+        if (blog == null || !Integer.valueOf(BlogState.PUBLISHED.getCode()).equals(blog.getStatus())) {
             throw notFound();
         }
         return blog;
