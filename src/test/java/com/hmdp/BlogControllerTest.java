@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,9 +26,7 @@ class BlogControllerTest {
 
     @BeforeEach
     void setup() {
-        BlogController controller = new BlogController();
-        ReflectionTestUtils.setField(controller, "publishFacade", facade);
-        ReflectionTestUtils.setField(controller, "blogService", queries);
+        BlogController controller = new BlogController(queries, facade);
         mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new WebExceptionAdvice()).build();
     }
 

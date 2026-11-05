@@ -7,13 +7,17 @@ import com.hmdp.dto.blog.BlogVersionCommand;
 import com.hmdp.service.IBlogService;
 import com.hmdp.service.blog.BlogPublishFacade;
 import org.springframework.web.bind.annotation.*;
-import javax.annotation.Resource;
 
 @RestController
 @RequestMapping("/blog")
 public class BlogController {
-    @Resource private IBlogService blogService;
-    @Resource private BlogPublishFacade publishFacade;
+    private final IBlogService blogService;
+    private final BlogPublishFacade publishFacade;
+
+    public BlogController(IBlogService blogService, BlogPublishFacade publishFacade) {
+        this.blogService = blogService;
+        this.publishFacade = publishFacade;
+    }
 
     /** 保存草稿，公开发布必须经过提交和审核。 */
     @PostMapping

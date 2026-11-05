@@ -3,6 +3,10 @@ package com.hmdp;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.hmdp.config.MybatisConfig;
+import com.hmdp.config.BlogStateMachineConfig;
+import com.hmdp.action.BlogStateAction;
+import com.hmdp.handler.BlogStateHandler;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.hmdp.config.WebExceptionAdvice;
 import com.hmdp.controller.BlogController;
 import com.hmdp.dto.Result;
@@ -64,7 +68,8 @@ class BlogPublishIntegrationTest {
     @TestConfiguration
     @EnableTransactionManagement
     @MapperScan("com.hmdp.mapper")
-    @Import({BlogLifecycleService.class, BlogPublishFacade.class, BlogQueryService.class,
+    @Import({BlogStateMachineConfig.class, BlogStateAction.class, BlogStateHandler.class,
+            BlogPublishFacade.class, BlogQueryService.class,
             BlogFeedOutboxWorker.class, MybatisConfig.class})
     static class TestConfig {
         @Bean DataSource dataSource() {
@@ -95,7 +100,7 @@ class BlogPublishIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private StringRedisTemplate redis;
     @Autowired private BlogPublishFacade facade;
-    @Autowired private BlogLifecycleService lifecycle;
+    @Autowired private BlogStateAction stateAction;
     @Autowired private IBlogService queries;
     @Autowired private BlogFeedOutboxWorker worker;
     @Autowired private BlogFeedOutboxMapper outboxMapper;
@@ -120,9 +125,7 @@ class BlogPublishIntegrationTest {
         }
         redis.execute(connection -> { connection.serverCommands().flushDb(); return null; }, true);
         login(10L);
-        BlogController controller = new BlogController();
-        ReflectionTestUtils.setField(controller, "blogService", queries);
-        ReflectionTestUtils.setField(controller, "publishFacade", facade);
+        BlogController controller = new BlogController(queries, facade);
         mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new WebExceptionAdvice()).build();
     }
 
@@ -238,9 +241,7 @@ class BlogPublishIntegrationTest {
 
     @Test
     void httpPublicationFlowUsesRedisLoginAndDatabaseReviewPermission() throws Exception {
-        BlogController controller = new BlogController();
-        ReflectionTestUtils.setField(controller, "blogService", queries);
-        ReflectionTestUtils.setField(controller, "publishFacade", facade);
+        BlogController controller = new BlogController(queries, facade);
         MockMvc http = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new WebExceptionAdvice())
                 .addInterceptors(new RefreshTokenInterceptor(redis), new LoginInterceptor()).build();
         for (String[] session : new String[][]{{"author", "10"}, {"reviewer", "1"}, {"reader", "11"}}) {
@@ -310,8 +311,14 @@ class BlogPublishIntegrationTest {
     void outboxInsertFailureRollsBackPublication() {
         BlogOwnerDTO blog = pending();
         BlogFeedOutboxMapper broken = mock(BlogFeedOutboxMapper.class);
-        when(broken.insert(any())).thenThrow(new IllegalStateException("outbox unavailable"));
-        Object target = AopTestUtils.getUltimateTargetObject(lifecycle);
+        Thread caller = Thread.currentThread();
+        when(broken.insert(any())).thenAnswer(invocation -> {
+            assertSame(caller, Thread.currentThread());
+            assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+            assertEquals(2, jdbc.queryForObject("SELECT status FROM tb_blog WHERE id=?", Integer.class, blog.getId()));
+            throw new IllegalStateException("outbox unavailable");
+        });
+        Object target = AopTestUtils.getUltimateTargetObject(stateAction);
         ReflectionTestUtils.setField(target, "outboxMapper", broken);
         login(1L);
         try {
@@ -321,6 +328,7 @@ class BlogPublishIntegrationTest {
         }
         statusIs(blog.getId(), 1);
         assertNull(jdbc.queryForObject("SELECT publish_time FROM tb_blog WHERE id=?", Object.class, blog.getId()));
+        assertEquals(blog.getVersion(), jdbc.queryForObject("SELECT version FROM tb_blog WHERE id=?", Long.class, blog.getId()));
         assertEquals(0, countEvents());
         facade.review(blog.getId(), decision(blog, true));
         assertEquals(1, countEvents());
@@ -359,6 +367,19 @@ class BlogPublishIntegrationTest {
         login(reviewer == 1L ? 2L : 1L);
         facade.review(blog.getId(), decision(blog, true));
         assertEquals(reviewer, jdbc.queryForObject("SELECT reviewer_id FROM tb_blog WHERE id=?", Long.class, blog.getId()));
+    }
+
+    @Test
+    void concurrentEventsForDifferentBlogsKeepTheirContextsSeparate() throws Exception {
+        BlogOwnerDTO approved = pending();
+        BlogOwnerDTO rejected = pending();
+        List<Integer> outcomes = race(() -> reviewAs(1L, approved, true), () -> reviewAs(2L, rejected, false));
+        assertEquals(Arrays.asList(200, 200), outcomes);
+        statusIs(approved.getId(), 2);
+        statusIs(rejected.getId(), 3);
+        assertEquals(1L, jdbc.queryForObject("SELECT reviewer_id FROM tb_blog WHERE id=?", Long.class, approved.getId()));
+        assertEquals(2L, jdbc.queryForObject("SELECT reviewer_id FROM tb_blog WHERE id=?", Long.class, rejected.getId()));
+        assertEquals(approved.getId(), jdbc.queryForObject("SELECT blog_id FROM tb_blog_feed_outbox", Long.class));
     }
 
     @Test
