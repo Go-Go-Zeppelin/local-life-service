@@ -1,6 +1,5 @@
 package com.hmdp.config;
 
-import com.hmdp.action.BlogStateAction;
 import com.hmdp.entity.Blog;
 import com.hmdp.enums.BlogState;
 import com.hmdp.enums.BlogStateEvent;
@@ -18,21 +17,20 @@ import org.springframework.statemachine.persist.DefaultStateMachinePersister;
 import org.springframework.statemachine.persist.StateMachinePersister;
 import org.springframework.statemachine.support.DefaultStateMachineContext;
 
-import javax.annotation.Resource;
 import java.util.EnumSet;
 
-/** 集中声明状态、事件、转换和动作，与文章中的配置类对应。 */
+/** 声明状态与事件的转换关系，动作由 StatesOnTransition 注解关联。 */
 @Configuration
 @EnableStateMachineFactory(name = "blogStateMachineFactory")
 public class BlogStateMachineConfig extends StateMachineConfigurerAdapter<BlogState, BlogStateEvent> {
-    @Resource
-    private BlogStateAction blogStateAction;
+    public static final String MACHINE_ID = "blogStateMachine";
 
     @Override
     public void configure(StateMachineConfigurationConfigurer<BlogState, BlogStateEvent> config) throws Exception {
         // Action 必须与 Facade 在同一线程执行，才能参与同一个数据库事务。
         config.withConfiguration()
                 .autoStartup(false)
+                .machineId(MACHINE_ID)
                 .taskExecutor(new SyncTaskExecutor());
     }
 
@@ -50,42 +48,36 @@ public class BlogStateMachineConfig extends StateMachineConfigurerAdapter<BlogSt
                 .withExternal()
                 .source(BlogState.DRAFT).target(BlogState.DRAFT)
                 .event(BlogStateEvent.EDIT)
-                .action(blogStateAction::edit, blogStateAction::onError)
                 .and()
 
                 // 已驳回的笔记修改后回到草稿。
                 .withExternal()
                 .source(BlogState.REJECTED).target(BlogState.DRAFT)
                 .event(BlogStateEvent.EDIT)
-                .action(blogStateAction::edit, blogStateAction::onError)
                 .and()
 
                 // 草稿提交审核。
                 .withExternal()
                 .source(BlogState.DRAFT).target(BlogState.PENDING_REVIEW)
                 .event(BlogStateEvent.SUBMIT)
-                .action(blogStateAction::submit, blogStateAction::onError)
                 .and()
 
                 // 已驳回的笔记直接重新提交。
                 .withExternal()
                 .source(BlogState.REJECTED).target(BlogState.PENDING_REVIEW)
                 .event(BlogStateEvent.SUBMIT)
-                .action(blogStateAction::submit, blogStateAction::onError)
                 .and()
 
                 // 审核通过，发布并登记 Feed 推送任务。
                 .withExternal()
                 .source(BlogState.PENDING_REVIEW).target(BlogState.PUBLISHED)
                 .event(BlogStateEvent.APPROVE)
-                .action(blogStateAction::approve, blogStateAction::onError)
                 .and()
 
                 // 审核驳回，保存驳回原因。
                 .withExternal()
                 .source(BlogState.PENDING_REVIEW).target(BlogState.REJECTED)
-                .event(BlogStateEvent.REJECT)
-                .action(blogStateAction::reject, blogStateAction::onError);
+                .event(BlogStateEvent.REJECT);
     }
 
     @Bean
@@ -99,7 +91,8 @@ public class BlogStateMachineConfig extends StateMachineConfigurerAdapter<BlogSt
             @Override
             public StateMachineContext<BlogState, BlogStateEvent> read(Blog blog) {
                 BlogState state = BlogState.fromCode(blog.getStatus());
-                return new DefaultStateMachineContext<>(state, null, null, null);
+                // 恢复时也保留逻辑 ID，@WithStateMachine(id=...) 才能匹配每个工厂实例。
+                return new DefaultStateMachineContext<>(state, null, null, null, null, MACHINE_ID);
             }
         });
     }

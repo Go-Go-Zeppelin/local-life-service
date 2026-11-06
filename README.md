@@ -108,6 +108,7 @@ src/main/java/com/hmdp/
 ├── controller/   HTTP API
 ├── service/      业务逻辑与缓存
 ├── enums/        笔记状态与操作事件
+├── annotation/   状态转换的自定义注解
 ├── action/       状态转换的数据库动作
 ├── handler/      状态机调用与单次事件上下文
 ├── consumer/     Kafka 消费与补偿
