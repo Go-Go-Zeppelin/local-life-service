@@ -18,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.Lifecycle;
@@ -26,6 +27,7 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.statemachine.StateMachine;
 import org.springframework.statemachine.config.StateMachineFactory;
 import org.springframework.statemachine.persist.StateMachinePersister;
+import org.springframework.statemachine.processor.StateMachineHandler;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -50,6 +52,12 @@ class BlogStateMachineTest {
     @Autowired private BlogStateHandler handler;
     @Autowired private StateMachineFactory<BlogState, BlogStateEvent> factory;
     @Autowired private StateMachinePersister<BlogState, BlogStateEvent, Blog> persister;
+    @Autowired private ApplicationContext applicationContext;
+
+    @Test
+    void annotationCallbacksAreRegistered() {
+        assertEquals(4, applicationContext.getBeansOfType(StateMachineHandler.class).size());
+    }
 
     @BeforeEach
     void setup() {
@@ -101,6 +109,7 @@ class BlogStateMachineTest {
         try {
             persister.restore(machine, context.getBlog());
             assertTrue(((Lifecycle) machine).isRunning());
+            assertEquals(BlogStateMachineConfig.MACHINE_ID, machine.getId());
             assertEquals(source, machine.getState().getId());
             boolean accepted = machine.sendEvent(MessageBuilder.withPayload(event)
                     .setHeader(BlogTransitionContext.HEADER, context).build());
@@ -108,6 +117,9 @@ class BlogStateMachineTest {
             assertTrue(context.isActionCompleted());
             assertNull(context.getFailure());
             assertEquals(target, machine.getState().getId());
+            assertEquals(1, mockingDetails(blogMapper).getInvocations().size(), "每次转换只执行一次数据库动作");
+            int expectedOutboxWrites = event == BlogStateEvent.APPROVE ? 1 : 0;
+            assertEquals(expectedOutboxWrites, mockingDetails(outboxMapper).getInvocations().size());
         } finally {
             machine.stop();
         }
