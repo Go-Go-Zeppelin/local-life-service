@@ -41,7 +41,8 @@ CREATE TABLE `tb_blog`  (
   `update_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`) USING BTREE,
   KEY idx_blog_status_id (status, id),
-  KEY idx_blog_author_status (user_id, status, id)
+  KEY idx_blog_author_status (user_id, status, id),
+  KEY idx_blog_author_status_publish_time (user_id, status, publish_time, id)
 ) ENGINE = InnoDB AUTO_INCREMENT = 8 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = Compact;
 
 -- ----------------------------

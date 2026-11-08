@@ -18,8 +18,10 @@ import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IBlogService;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -30,6 +32,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -53,7 +56,15 @@ public class BlogQueryService implements IBlogService {
 
     @Override
     public Result queryBlogsByUser(Long userId, Integer current) {
-        return publicPage(current, published().eq("user_id", userId).orderByDesc("publish_time").orderByDesc("id"));
+        Page<Blog> page = page(current);
+        int publishedStatus = BlogState.PUBLISHED.getCode();
+        long total = blogMapper.countPublishedByUser(userId, publishedStatus);
+        long offset = page.offset();
+        if (offset >= total) {
+            return Result.ok(Collections.emptyList(), total);
+        }
+        List<Blog> blogs = blogMapper.selectPublishedPageByUser(userId, publishedStatus, offset, page.getSize());
+        return Result.ok(publicViews(blogs), total);
     }
 
     @Override
@@ -141,8 +152,8 @@ public class BlogQueryService implements IBlogService {
         long cursorTime = max;
         int cursorOffset = offset;
         int scanned = 0;
-        List<BlogPublicDTO> result = new ArrayList<>();
-        while (result.size() < FEED_PAGE_SIZE && scanned < FEED_SCAN_LIMIT) {
+        List<Blog> selectedBlogs = new ArrayList<>();
+        while (selectedBlogs.size() < FEED_PAGE_SIZE && scanned < FEED_SCAN_LIMIT) {
             Set<ZSetOperations.TypedTuple<String>> batch = redis.opsForZSet()
                     .reverseRangeByScoreWithScores(key, 0, cursorTime, cursorOffset, FEED_SCAN_BATCH);
             if (batch == null || batch.isEmpty()) {
@@ -160,17 +171,17 @@ public class BlogQueryService implements IBlogService {
                 scanned++;
                 Blog blog = visible.get(Long.valueOf(tuple.getValue()));
                 if (blog != null) {
-                    result.add(publicView(blog));
+                    selectedBlogs.add(blog);
                 }
                 // 批量预读不代表已消费。只推进到实际处理的位置，保留剩余记录给下一页。
-                if (result.size() == FEED_PAGE_SIZE || scanned == FEED_SCAN_LIMIT) {
+                if (selectedBlogs.size() == FEED_PAGE_SIZE || scanned == FEED_SCAN_LIMIT) {
                     break;
                 }
             }
         }
         Set<String> next = redis.opsForZSet().reverseRangeByScore(key, 0, cursorTime, cursorOffset, 1);
         ScrollResult page = new ScrollResult();
-        page.setList(result);
+        page.setList(publicViews(selectedBlogs));
         page.setMinTime(cursorTime);
         page.setOffset(cursorOffset);
         page.setHasMore(next != null && !next.isEmpty());
@@ -191,7 +202,7 @@ public class BlogQueryService implements IBlogService {
 
     private Result publicPage(Integer current, QueryWrapper<Blog> query) {
         Page<Blog> page = blogMapper.selectPage(page(current), query);
-        return Result.ok(page.getRecords().stream().map(this::publicView).collect(Collectors.toList()), page.getTotal());
+        return Result.ok(publicViews(page.getRecords()), page.getTotal());
     }
 
     private Page<Blog> page(Integer current) {
@@ -212,6 +223,53 @@ public class BlogQueryService implements IBlogService {
         view.setIsLike(user != null && redis.opsForZSet().score(BLOG_LIKED_KEY + blog.getId(),
                 user.getId().toString()) != null);
         return view;
+    }
+
+    private List<BlogPublicDTO> publicViews(List<Blog> blogs) {
+        if (blogs == null || blogs.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> authorIds = blogs.stream()
+                .map(Blog::getUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, User> authors = authorIds.isEmpty() ? Collections.emptyMap() : userMapper.selectBatchIds(authorIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        UserDTO user = UserHolder.getUser();
+        List<Object> likedScores = user == null ? Collections.emptyList() : queryLikedScores(blogs, user.getId());
+        List<BlogPublicDTO> views = new ArrayList<>(blogs.size());
+        for (int i = 0; i < blogs.size(); i++) {
+            Blog blog = blogs.get(i);
+            BlogPublicDTO view = BeanUtil.copyProperties(blog, BlogPublicDTO.class);
+            User author = authors.get(blog.getUserId());
+            if (author != null) {
+                view.setName(author.getNickName());
+                view.setIcon(author.getIcon());
+            }
+            view.setIsLike(user != null && likedScores.get(i) != null);
+            views.add(view);
+        }
+        return views;
+    }
+
+    private List<Object> queryLikedScores(List<Blog> blogs, Long userId) {
+        RedisSerializer<String> serializer = redis.getStringSerializer();
+        byte[] member = serializer.serialize(userId.toString());
+        List<Object> scores = redis.executePipelined((RedisCallback<Object>) connection -> {
+            for (Blog blog : blogs) {
+                connection.zSetCommands().zScore(
+                        serializer.serialize(BLOG_LIKED_KEY + blog.getId()), member);
+            }
+            return null;
+        });
+        if (scores == null || scores.size() != blogs.size()) {
+            throw new IllegalStateException("点赞状态批量查询结果数量不匹配");
+        }
+        return scores;
     }
 
     private Long currentUserId() {
