@@ -89,7 +89,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             // 不需要坐标查询，按数据库查询
             Page<Shop> page = query()
                     .eq("type_id", typeId)
-                    .page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE));
+                    .page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE, false));
             // 返回数据
             return Result.ok(page.getRecords());
         }

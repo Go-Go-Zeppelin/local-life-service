@@ -54,6 +54,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import static com.hmdp.utils.RedisConstants.BLOG_LIKED_KEY;
+import static org.hamcrest.Matchers.contains;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -293,6 +295,42 @@ class BlogPublishIntegrationTest {
     }
 
     @Test
+    void publishedUserPagesKeepOrderTotalAndPublicFields() throws Exception {
+        for (long id = 101; id <= 114; id++) {
+            insertBlog(id, 2);
+        }
+        insertBlog(115, 0);
+        insertBlog(116, 2);
+        jdbc.update("UPDATE tb_blog SET publish_time='2026-01-01' WHERE id=101");
+        jdbc.update("UPDATE tb_blog SET publish_time='2026-01-02' WHERE id BETWEEN 102 AND 112");
+        jdbc.update("UPDATE tb_blog SET publish_time='2026-01-03' WHERE id IN (115,116)");
+        jdbc.update("UPDATE tb_blog SET user_id=11 WHERE id=116");
+        login(11L);
+        redis.opsForZSet().add(BLOG_LIKED_KEY + 112L, "11", 0D);
+
+        mvc.perform(get("/blog/of/user").param("id", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(14))
+                .andExpect(jsonPath("$.data[*].id").value(contains(112, 111, 110, 109, 108, 107, 106, 105, 104, 103)))
+                .andExpect(jsonPath("$.data[0].name").value("user10"))
+                .andExpect(jsonPath("$.data[0].isLike").value(true))
+                .andExpect(jsonPath("$.data[1].isLike").value(false))
+                .andExpect(jsonPath("$.data[0].publishTime").exists())
+                .andExpect(jsonPath("$.data[0].status").doesNotExist());
+        mvc.perform(get("/blog/of/user").param("id", "10").param("current", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(14))
+                .andExpect(jsonPath("$.data[*].id").value(contains(102, 101, 114, 113)))
+                .andExpect(jsonPath("$.data[2].publishTime").doesNotExist());
+        mvc.perform(get("/blog/of/user").param("id", "10").param("current", String.valueOf(Integer.MAX_VALUE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(14))
+                .andExpect(jsonPath("$.data").isEmpty());
+        mvc.perform(get("/blog/of/user").param("id", "10").param("current", "0"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void emptyDraftCannotSubmitAndStaleOrMissingVersionsCannotEdit() {
         BlogDraftCommand empty = content(null);
         empty.setTitle("");
@@ -518,7 +556,8 @@ class BlogPublishIntegrationTest {
         jdbc.execute("CREATE TABLE tb_follow_migration_test LIKE tb_follow");
         try {
             jdbc.execute("ALTER TABLE tb_blog_migration_test DROP INDEX idx_blog_status_id, DROP INDEX idx_blog_author_status, " +
-                    "DROP COLUMN status, DROP COLUMN version, DROP COLUMN review_round, DROP COLUMN reviewer_id, " +
+                    "DROP INDEX idx_blog_author_status_publish_time, DROP COLUMN status, " +
+                    "DROP COLUMN version, DROP COLUMN review_round, DROP COLUMN reviewer_id, " +
                     "DROP COLUMN review_time, DROP COLUMN reject_reason, DROP COLUMN publish_time");
             jdbc.execute("ALTER TABLE tb_user_migration_test DROP COLUMN role");
             jdbc.execute("ALTER TABLE tb_follow_migration_test DROP INDEX idx_follow_author_id");
